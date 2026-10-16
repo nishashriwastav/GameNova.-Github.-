@@ -1,0 +1,281 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>WildCraft Survival V2</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;background:#152719;color:white;font:14px Arial;touch-action:none}
+canvas{display:block}
+#hud{position:fixed;top:8px;left:8px;z-index:2;background:#102018dd;padding:10px;border-radius:12px;min-width:155px}
+.bar{height:10px;background:#444;border-radius:8px;margin:5px 0 9px;overflow:hidden}
+.fill{height:100%;width:100%;background:#4ade80}
+#health{background:#ef4444}#hunger{background:#fbbf24}
+#inventory{font-size:12px;line-height:1.6}
+#message{position:fixed;top:12px;left:50%;transform:translateX(-50%);background:#14251ddd;padding:9px 13px;border-radius:12px;z-index:3;text-align:center;max-width:90%;pointer-events:none}
+#controls{position:fixed;bottom:16px;left:0;right:0;display:flex;justify-content:space-between;align-items:end;padding:0 16px;z-index:4;pointer-events:none}
+#stick{width:120px;height:120px;border-radius:50%;background:#ffffff25;border:2px solid #ffffff66;position:relative;pointer-events:auto;touch-action:none}
+#knob{position:absolute;width:48px;height:48px;left:34px;top:34px;border-radius:50%;background:#ffffffaa}
+.buttons{display:grid;grid-template-columns:repeat(2,66px);gap:8px;pointer-events:auto}
+button{border:1px solid #ffffff55;border-radius:14px;background:#193e2beF;color:white;padding:13px 5px;font-weight:bold;font-size:12px;touch-action:manipulation}
+#hint{position:fixed;bottom:148px;left:10px;background:#14251dbb;padding:8px;border-radius:8px;font-size:11px;z-index:2}
+</style>
+</head>
+<body>
+<div id="hud">
+  <b>🌲 WildCraft Survival</b>
+  <div>❤️ Health</div><div class="bar"><div id="health" class="fill"></div></div>
+  <div>🍗 Hunger</div><div class="bar"><div id="hunger" class="fill"></div></div>
+  <div id="inventory">🪵 Wood: 0<br>🪨 Stone: 0<br>🍎 Food: 0</div>
+  <div id="clock">☀️ Day 1</div>
+</div>
+<div id="message">Explore the forest and gather resources!</div>
+<div id="hint">Move with joystick • Tap buttons to act</div>
+<div id="controls">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="buttons">
+    <button id="gather">🪓 GATHER</button>
+    <button id="eat">🍎 EAT</button>
+    <button id="craft">🛠️ CRAFT</button>
+    <button id="attack">⚔️ ATTACK</button>
+  </div>
+</div>
+
+<script type="module">
+import * as THREE from
+'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x91c8e9);
+scene.fog = new THREE.Fog(0x91c8e9, 35, 100);
+
+const camera = new THREE.PerspectiveCamera(
+  65, innerWidth/innerHeight, 0.1, 150
+);
+const renderer = new THREE.WebGLRenderer({antialias:false});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5));
+renderer.shadowMap.enabled = false;
+document.body.prepend(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbce7ff,0x40552b,2));
+const sun = new THREE.DirectionalLight(0xffedc0,2);
+sun.position.set(20,35,10);
+scene.add(sun);
+
+const mat=(color)=>new THREE.MeshStandardMaterial({color});
+const grass=mat(0x477b37), bark=mat(0x68442a),
+      leaves=mat(0x205d32), rockmat=mat(0x858b8d),
+      skin=mat(0xe0ae80), shirt=mat(0x287e50),
+      dark=mat(0x282d30), wolfmat=mat(0x777c82);
+
+const ground=new THREE.Mesh(
+  new THREE.PlaneGeometry(200,200),
+  grass
+);
+ground.rotation.x=-Math.PI/2;
+ground.position.y=-0.08;
+scene.add(ground);
+
+function block(w,h,d,material,x,y,z){
+  const m=new THREE.Mesh(new THREE.BoxGeometry(w,h,d),material);
+  m.position.set(x,y,z);scene.add(m);return m;
+}
+function ball(r,material,x,y,z){
+  const m=new THREE.Mesh(new THREE.SphereGeometry(r,8,6),material);
+  m.position.set(x,y,z);scene.add(m);return m;
+}
+function tree(x,z){
+  const group=new THREE.Group();
+  const trunk=new THREE.Mesh(new THREE.CylinderGeometry(.22,.32,2,6),bark);
+  trunk.position.y=1;group.add(trunk);
+  for(let i=0;i<3;i++){
+    const crown=new THREE.Mesh(
+      new THREE.ConeGeometry(1.2-i*.18,2,6),leaves
+    );
+    crown.position.y=2+i*.8;group.add(crown);
+  }
+  group.position.set(x,0,z);scene.add(group);
+  resources.push({type:'wood',x,z,mesh:group});
+}
+function rock(x,z){
+  const mesh=new THREE.Mesh(new THREE.DodecahedronGeometry(.55,0),rockmat);
+  mesh.position.set(x,.35,z);mesh.scale.y=.7;scene.add(mesh);
+  resources.push({type:'stone',x,z,mesh});
+}
+const resources=[];
+for(let i=0;i<90;i++){
+  const x=(Math.random()-.5)*90,z=(Math.random()-.5)*90;
+  if(Math.hypot(x,z)<5)continue;
+  if(Math.random()<.68)tree(x,z);else rock(x,z);
+}
+
+// Player model
+const player=new THREE.Group();
+const body=block(.65,.9,.4,shirt,0,0,0);
+body.position.set(0,1.15,0);body.parent.remove(body);player.add(body);
+const head=ball(.28,skin,0,0,0);
+head.position.set(0,1.85,0);head.parent.remove(head);player.add(head);
+const leg1=block(.22,.65,.25,dark,0,0,0);
+leg1.position.set(-.17,.38,0);leg1.parent.remove(leg1);player.add(leg1);
+const leg2=block(.22,.65,.25,dark,0,0,0);
+leg2.position.set(.17,.38,0);leg2.parent.remove(leg2);player.add(leg2);
+player.position.set(0,0,0);scene.add(player);
+
+// Wolves
+const wolves=[];
+function wolf(x,z){
+  const g=new THREE.Group();
+  const torso=new THREE.Mesh(new THREE.BoxGeometry(.9,.48,.4),wolfmat);
+  torso.position.y=.65;g.add(torso);
+  const h=new THREE.Mesh(new THREE.BoxGeometry(.4,.35,.35),wolfmat);
+  h.position.set(0,.82,-.48);g.add(h);
+  for(const x0 of [-.27,.27])for(const z0 of [-.23,.23]){
+    const leg=new THREE.Mesh(new THREE.BoxGeometry(.12,.42,.12),wolfmat);
+    leg.position.set(x0,.25,z0);g.add(leg);
+  }
+  g.position.set(x,0,z);scene.add(g);
+  wolves.push({mesh:g,hp:3,hit:0});
+}
+for(let i=0;i<5;i++)wolf((Math.random()-.5)*35,(Math.random()-.5)*35);
+
+const state={health:100,hunger:100,wood:0,stone:0,food:0,day:1};
+let weapon=false,elapsed=0,gameOver=false;
+let vx=0,vz=0;
+const msg=document.querySelector('#message');
+function say(s){msg.textContent=s;clearTimeout(say.timer);say.timer=setTimeout(()=>msg.textContent='',2500)}
+function updateHUD(){
+  document.querySelector('#health').style.width=Math.max(0,state.health)+'%';
+  document.querySelector('#hunger').style.width=Math.max(0,state.hunger)+'%';
+  document.querySelector('#inventory').innerHTML=
+    `🪵 Wood: ${state.wood}<br>🪨 Stone: ${state.stone}<br>🍎 Food: ${state.food}<br>🗡️ ${weapon?'Crafted tool':'No tool'}`;
+  document.querySelector('#clock').textContent=
+    (Math.sin(elapsed*.04)>-.15?'☀️':'🌙')+' Day '+state.day;
+}
+function nearResource(){
+  let best=null,dist=4;
+  for(const r of resources){
+    if(!r.mesh.visible)continue;
+    const d=Math.hypot(player.position.x-r.x,player.position.z-r.z);
+    if(d<dist){dist=d;best=r;}
+  }
+  return best;
+}
+document.querySelector('#gather').onclick=()=>{
+  if(gameOver)return;
+  const r=nearResource();
+  if(!r){say('Move closer to a tree or rock!');return;}
+  if(r.type==='wood'){state.wood+=2;say('Collected wood! 🪵');}
+  else {state.stone+=1;say('Collected stone! 🪨');}
+  r.mesh.visible=false;updateHUD();
+};
+document.querySelector('#eat').onclick=()=>{
+  if(state.food>0){state.food--;state.hunger=Math.min(100,state.hunger+30);say('You ate food!');}
+  else say('No food! Craft food using 2 wood and 1 stone.');
+  updateHUD();
+};
+document.querySelector('#craft').onclick=()=>{
+  if(state.wood>=3&&state.stone>=2&&!weapon){
+    state.wood-=3;state.stone-=2;weapon=true;say('Tool crafted! Attacks are stronger.');
+  }else if(state.wood>=2&&state.stone>=1&&state.food<5){
+    state.wood-=2;state.stone--;state.food++;say('Crafted 1 food!');
+  }else say('Need 3 wood + 2 stone for a tool, or 2 wood + 1 stone for food.');
+  updateHUD();
+};
+document.querySelector('#attack').onclick=()=>{
+  if(gameOver)return;
+  let target=null,dist=3;
+  for(const w of wolves){
+    if(w.hp<=0)continue;
+    const d=player.position.distanceTo(w.mesh.position);
+    if(d<dist){dist=d;target=w;}
+  }
+  if(!target){say('No wolf nearby!');return;}
+  target.hp-=weapon?2:1;
+  target.hit=.25;
+  if(target.hp<=0){
+    scene.remove(target.mesh);state.food++;
+    say('Wolf defeated! +1 food 🍎');
+  }else say('You hit the wolf!');
+  updateHUD();
+};
+
+// Touch joystick
+const stick=document.querySelector('#stick'),knob=document.querySelector('#knob');
+let joyX=0,joyY=0,drag=false;
+function joystick(e){
+  const r=stick.getBoundingClientRect();
+  const x=e.clientX-(r.left+r.width/2);
+  const y=e.clientY-(r.top+r.height/2);
+  const max=36,len=Math.hypot(x,y)||1;
+  const a=Math.min(max,len);
+  joyX=x/len*a/max;joyY=y/len*a/max;
+  knob.style.transform=`translate(${joyX*36}px,${joyY*36}px)`;
+}
+stick.addEventListener('pointerdown',e=>{drag=true;stick.setPointerCapture(e.pointerId);joystick(e)});
+stick.addEventListener('pointermove',e=>{if(drag)joystick(e)});
+function stopJoy(){drag=false;joyX=joyY=0;knob.style.transform='translate(0,0)'}
+stick.addEventListener('pointerup',stopJoy);
+stick.addEventListener('pointercancel',stopJoy);
+
+// Desktop keyboard support
+const keys={};
+addEventListener('keydown',e=>{keys[e.key.toLowerCase()]=true});
+addEventListener('keyup',e=>{keys[e.key.toLowerCase()]=false});
+
+let last=performance.now();
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt=Math.min((now-last)/1000,.05);last=now;
+  if(!gameOver){
+    elapsed+=dt;
+    if(elapsed>120){elapsed=0;state.day++;}
+    state.hunger=Math.max(0,state.hunger-dt*.45);
+    if(state.hunger===0)state.health=Math.max(0,state.health-dt*2);
+    if(state.health<=0){gameOver=true;say('You were defeated! Refresh to restart.');}
+    const forward=joyY+(keys['s']||keys['arrowdown']?1:0)-(keys['w']||keys['arrowup']?1:0);
+    const side=joyX+(keys['d']||keys['arrowright']?1:0)-(keys['a']||keys['arrowleft']?1:0);
+    vx=side;vz=forward;
+    const len=Math.hypot(vx,vz);
+    if(len>1){vx/=len;vz/=len;}
+    player.position.x+=vx*dt*5;
+    player.position.z+=vz*dt*5;
+    player.position.x=THREE.MathUtils.clamp(player.position.x,-95,95);
+    player.position.z=THREE.MathUtils.clamp(player.position.z,-95,95);
+    if(len>.05)player.rotation.y=Math.atan2(-vx,-vz);
+    camera.position.set(player.position.x,player.position.y+5,player.position.z+8);
+    camera.lookAt(player.position.x,1,player.position.z);
+    for(const w of wolves){
+      if(w.hp<=0)continue;
+      const dx=player.position.x-w.mesh.position.x;
+      const dz=player.position.z-w.mesh.position.z;
+      const d=Math.hypot(dx,dz)||1;
+      if(d<12&&d>1.4){
+        w.mesh.position.x+=dx/d*dt*1.6;
+        w.mesh.position.z+=dz/d*dt*1.6;
+        w.mesh.rotation.y=Math.atan2(-dx,-dz);
+      }
+      if(d<1.4){
+        w.hit-=dt;
+        if(w.hit<=0){state.health=Math.max(0,state.health-8);w.hit=1.3;}
+      }
+    }
+    const night=Math.max(0,-Math.sin(elapsed*.04));
+    scene.background=new THREE.Color().setRGB(.57*(1-night*.8),.78*(1-night*.8),.91*(1-night*.65));
+    scene.fog.color.copy(scene.background);
+    sun.intensity=2-night*1.6;
+    if(Math.floor(elapsed)%2===0)updateHUD();
+  }
+  renderer.render(scene,camera);
+}
+addEventListener('resize',()=>{
+  camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth,innerHeight);
+});
+updateHUD();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
